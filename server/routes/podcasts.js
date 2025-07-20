@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import { Podcast } from "../models/Podcast.js";
+import { authenticateToken } from "../middleware/auth.js";
 import { generatePodcastScript, generateAudio } from "../utils/groqService.js";
 import { generateAvatarVideo } from "../utils/heygenService.js";
 
@@ -14,12 +15,21 @@ const upload = multer({
 });
 
 // Get all podcasts
-router.get("/", async (req, res) => {
+router.get("/", authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const offset = (page - 1) * limit;
 
-    const podcasts = await Podcast.findAll(parseInt(limit), parseInt(offset));
+    console.log(`📊 Fetching podcasts for user ${req.user.id}`);
+
+    const podcasts = await Podcast.findByUserId(
+      req.user.id,
+      parseInt(limit),
+      parseInt(offset)
+    );
+
+    console.log(`📊 Found ${podcasts.length} podcasts for user ${req.user.id}`);
+
     res.json({
       success: true,
       data: podcasts,
@@ -34,7 +44,7 @@ router.get("/", async (req, res) => {
 });
 
 // Get single podcast
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticateToken, async (req, res) => {
   try {
     const podcast = await Podcast.findById(req.params.id);
 
@@ -42,6 +52,14 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({
         success: false,
         error: "Podcast not found",
+      });
+    }
+
+    // Check if podcast belongs to user
+    if (podcast.user_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: "Access denied - not your podcast",
       });
     }
 
@@ -59,50 +77,56 @@ router.get("/:id", async (req, res) => {
 });
 
 // Create new podcast
-router.post("/", upload.single("knowledgeFile"), async (req, res) => {
-  try {
-    const { title, description, length, knowledgeText } = req.body;
+router.post(
+  "/",
+  authenticateToken,
+  upload.single("knowledgeFile"),
+  async (req, res) => {
+    try {
+      const { title, description, length, knowledgeText } = req.body;
 
-    if (!title || !length || (!knowledgeText && !req.file)) {
-      return res.status(400).json({
+      if (!title || !length || (!knowledgeText && !req.file)) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: title, length, and knowledge base",
+        });
+      }
+
+      // Get knowledge base content
+      let knowledgeBase = knowledgeText || "";
+      if (req.file) {
+        knowledgeBase = req.file.buffer.toString("utf-8");
+      }
+
+      // Create podcast record
+      const podcast = await Podcast.create({
+        user_id: req.user.id,
+        title,
+        description,
+        knowledge_base: knowledgeBase,
+        length,
+      });
+
+      // Start async processing
+      processPodcast(podcast.id);
+
+      res.status(201).json({
+        success: true,
+        data: podcast,
+        message: "Podcast creation started. Processing in background.",
+      });
+    } catch (error) {
+      console.error("Create podcast error:", error);
+      res.status(500).json({
         success: false,
-        error: "Missing required fields: title, length, and knowledge base",
+        error: "Failed to create podcast",
       });
     }
-
-    // Get knowledge base content
-    let knowledgeBase = knowledgeText || "";
-    if (req.file) {
-      knowledgeBase = req.file.buffer.toString("utf-8");
-    }
-
-    // Create podcast record
-    const podcast = await Podcast.create({
-      title,
-      description,
-      knowledge_base: knowledgeBase,
-      length,
-    });
-
-    // Start async processing
-    processPodcast(podcast.id);
-
-    res.status(201).json({
-      success: true,
-      data: podcast,
-      message: "Podcast creation started. Processing in background.",
-    });
-  } catch (error) {
-    console.error("Create podcast error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to create podcast",
-    });
   }
-});
+);
 
 // Delete podcast
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticateToken, async (req, res) => {
   try {
     const podcast = await Podcast.findById(req.params.id);
 
@@ -110,6 +134,14 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({
         success: false,
         error: "Podcast not found",
+      });
+    }
+
+    // Check if podcast belongs to user
+    if (podcast.user_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: "Access denied - not your podcast",
       });
     }
 

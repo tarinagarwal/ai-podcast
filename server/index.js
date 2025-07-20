@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { initializeDatabase } from "./models/database.js";
 import podcastRoutes from "./routes/podcasts.js";
+import authRoutes from "./routes/auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,7 @@ console.log(
   "HEYGEN_API_KEY:",
   process.env.HEYGEN_API_KEY ? "✅ Loaded" : "❌ Missing"
 );
+console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ Loaded" : "❌ Missing");
 console.log("PORT:", process.env.PORT || "Using default 3001");
 
 const app = express();
@@ -49,6 +51,7 @@ await initializeDatabase();
 
 // Routes
 app.use("/api/podcasts", podcastRoutes);
+app.use("/api/auth", authRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", message: "AI Podcast Server is running" });

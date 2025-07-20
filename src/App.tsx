@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mic2, Plus, RefreshCw, AlertTriangle } from "lucide-react";
+import { Mic2, AlertTriangle, RefreshCw } from "lucide-react";
 import { podcastService } from "./services/api";
 import { Podcast, CreatePodcastRequest } from "./types/podcast";
+import { useAuth } from "./contexts/AuthContext";
 import PodcastForm from "./components/PodcastForm";
 import PodcastCard from "./components/PodcastCard";
 import PodcastModal from "./components/PodcastModal";
+import Header from "./components/Header";
 
 function App() {
   const [showForm, setShowForm] = useState(false);
@@ -14,6 +16,7 @@ function App() {
     "checking" | "online" | "offline"
   >("checking");
 
+  const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
 
   // Check server health
@@ -73,6 +76,11 @@ function App() {
     setSelectedPodcast(podcast);
   };
 
+  // Don't render anything if not authenticated (ProtectedRoute handles this)
+  if (!isAuthenticated) {
+    return null;
+  }
+
   if (serverStatus === "offline") {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -95,58 +103,13 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <Mic2 className="w-8 h-8 text-blue-600 mr-3" />
-              <h1 className="text-2xl font-bold text-gray-900">
-                AI Podcast Studio
-              </h1>
-              <div
-                className={`ml-3 flex items-center text-xs px-2 py-1 rounded-full ${
-                  serverStatus === "online"
-                    ? "bg-green-100 text-green-800"
-                    : serverStatus === "checking"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-red-100 text-red-800"
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full mr-1 ${
-                    serverStatus === "online"
-                      ? "bg-green-500"
-                      : serverStatus === "checking"
-                      ? "bg-yellow-500"
-                      : "bg-red-500"
-                  }`}
-                ></div>
-                {serverStatus === "checking" ? "Checking..." : serverStatus}
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => refetch()}
-                className="text-gray-500 hover:text-gray-700 transition-colors"
-                disabled={isLoading}
-              >
-                <RefreshCw
-                  className={`w-5 h-5 ${isLoading ? "animate-spin" : ""}`}
-                />
-              </button>
-
-              <button
-                onClick={() => setShowForm(!showForm)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                New Podcast
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header
+        serverStatus={serverStatus}
+        isLoading={isLoading}
+        onRefresh={() => refetch()}
+        onNewPodcast={() => setShowForm(!showForm)}
+        showForm={showForm}
+      />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

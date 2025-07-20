@@ -10,6 +10,28 @@ const api = axios.create({
   },
 });
 
+// Add token to requests if available
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle token expiration
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      // Don't redirect here as it might interfere with auth flow
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const podcastService = {
   async getAllPodcasts(page = 1, limit = 10): Promise<Podcast[]> {
     const response = await api.get(`/podcasts?page=${page}&limit=${limit}`);

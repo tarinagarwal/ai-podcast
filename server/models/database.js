@@ -41,9 +41,48 @@ db.runAsync = function (sql, params = []) {
 
 export const initializeDatabase = async () => {
   try {
+    // First, check if we need to migrate existing data
+    const tableInfo = await db.allAsync("PRAGMA table_info(podcasts)");
+    const hasUserIdColumn = tableInfo.some(
+      (column) => column.name === "user_id"
+    );
+
+    if (!hasUserIdColumn) {
+      console.log("🔄 Migrating existing database schema...");
+
+      // Add user_id column to existing podcasts table
+      await db.runAsync(`
+        ALTER TABLE podcasts ADD COLUMN user_id INTEGER
+      `);
+
+      console.log("✅ Added user_id column to podcasts table");
+    }
+
+    // Create users table
+    await db.runAsync(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.runAsync(`
+      CREATE TRIGGER IF NOT EXISTS update_users_timestamp 
+      AFTER UPDATE ON users 
+      BEGIN 
+        UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+      END
+    `);
+
+    // Create podcasts table
     await db.runAsync(`
       CREATE TABLE IF NOT EXISTS podcasts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
         title TEXT NOT NULL,
         description TEXT,
         knowledge_base TEXT NOT NULL,
@@ -54,7 +93,8 @@ export const initializeDatabase = async () => {
         status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'error')),
         error_message TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
       )
     `);
 
@@ -65,6 +105,43 @@ export const initializeDatabase = async () => {
         UPDATE podcasts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
       END
     `);
+
+    // Assign existing podcasts to tarinagarwal@gmail.com if needed
+    const existingPodcasts = await db.allAsync(
+      "SELECT id FROM podcasts WHERE user_id IS NULL"
+    );
+
+    if (existingPodcasts.length > 0) {
+      console.log(
+        `🔄 Found ${existingPodcasts.length} podcasts without user_id, assigning to tarinagarwal@gmail.com...`
+      );
+
+      // Find the user with email tarinagarwal@gmail.com
+      const targetUser = await db.getAsync(`
+        SELECT id FROM users WHERE email = 'tarinagarwal@gmail.com'
+      `);
+
+      if (targetUser) {
+        // Update existing podcasts to belong to tarinagarwal@gmail.com
+        await db.runAsync(
+          `
+          UPDATE podcasts SET user_id = ? WHERE user_id IS NULL
+        `,
+          [targetUser.id]
+        );
+
+        console.log(
+          `✅ Assigned ${existingPodcasts.length} existing podcasts to tarinagarwal@gmail.com`
+        );
+      } else {
+        console.log(
+          `❌ User tarinagarwal@gmail.com not found. Please register this user first.`
+        );
+        console.log(
+          `📝 Existing podcasts will remain unassigned until the user is created.`
+        );
+      }
+    }
 
     console.log("✅ Database initialized successfully");
   } catch (error) {
